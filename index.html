@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>weird ass game</title>
+<form id="nameBox" action="">
+    <input id="name" autocomplete="off" /><button type="button" onclick="setName(document.getElementById('name').value)">Set name</button>
+</form>
+<canvas id="game" width="480" height="360"></canvas>
+</head>
+<body onload="start()">
+<script src="/socket.io/socket.io.js"></script>
+<script>
+var socket = io();
+var chatbox=false;
+var camx=0;
+var camy=0;
+var camz=1;
+var x=200;
+var y=200;
+var xV=0;
+var yV=0;
+var d=0;
+var dashCd=0;
+var hp=100;
+var recoil=0;
+let id;
+var players=[];
+var proj=[];
+var input={UP:false,DOWN:false,LEFT:false,RIGHT:false,DASH:false,FIRE:false};
+var mouse={x:0,y:0};
+const gameSpace=document.getElementById("game");
+const pen=gameSpace.getContext("2d");
+//chatting stuff
+//end
+function start() {
+    //start loop
+    this.loop=setInterval(update,30);
+}
+function update(){
+    grid(30);
+    control();
+    //console.log(players);
+    for(var i=0;i<proj.length;i++){
+        p=proj[i];
+        pen.beginPath();
+        pen.arc(mX(p.x),mY(p.y), 5*camz, 0, 2 * Math.PI);
+        pen.lineWidth=8*camz;
+        if (p.id==id){
+            pen.fillStyle=`rgb(0, 234, 255)`;
+            pen.strokeStyle=`rgb(0, 180, 196)`;
+        }else{
+        pen.fillStyle=`rgb(255, 0, 0)`;
+        pen.strokeStyle=`rgb(168, 0, 0)`;}
+        pen.stroke();
+        pen.fill();
+    }
+    for(var i=0;i<players.length;i++){
+        p=players[i];
+        if (p.id!=id){
+            pen.beginPath();
+            pen.translate(mX(p.x),mY(p.y));
+            pen.rotate(p.d);
+            pen.rect(-5.5*camz,0,10*camz,(35-p.rc)*camz);
+            pen.lineWidth=10*camz;
+            pen.fillStyle=`rgb(200, 200, 200)`;
+            pen.strokeStyle=`rgb(150, 150, 150)`;
+            pen.stroke();
+            pen.fill();
+            pen.resetTransform();
+
+            pen.beginPath();
+            pen.arc(mX(p.x),mY(p.y), 16*camz, 0, 2 * Math.PI);
+            pen.lineWidth=10*camz;
+            pen.fillStyle=`rgb(255, 0, 0)`;
+            pen.strokeStyle=`rgb(168, 0, 0)`;
+            pen.stroke();
+            pen.fill();
+            hbar(p.x,p.y,p.hp/100);
+
+        }
+    }
+    pen.beginPath();
+    pen.translate(mX(x), mY(y));
+    pen.rotate(d);
+    pen.rect(-5.5*camz,0,10*camz,(35-recoil)*camz);
+    pen.lineWidth=10*camz;
+    pen.fillStyle=`rgb(200, 200, 200)`;
+    pen.strokeStyle=`rgb(150, 150, 150)`;
+    pen.stroke();
+    pen.fill();
+    pen.resetTransform();
+
+    pen.beginPath();
+    pen.arc(mX(x), mY(y), 16*camz, 0, 2 * Math.PI);
+    pen.lineWidth=10*camz;
+    pen.fillStyle=`rgb(0, 234, 255)`;
+    pen.strokeStyle=`rgb(0, 180, 196)`;
+    pen.stroke();
+    pen.fill();
+    
+    hbar(x,y,hp/100);
+    
+    pen.fillStyle="black";
+    pen.fillText("x:"+Math.round(x)+"  y:"+Math.round(y)+"  d:"+Math.round(d*(180/Math.PI))+"  xV:"+Math.round(xV)+"  yV:"+Math.round(yV)+"  Fire:"+input.FIRE,10,15);
+
+    //draw border
+    pen.beginPath();
+    pen.strokeStyle=`rgb(0,10,0)`;
+    pen.lineWidth=10;
+    pen.rect(0,0,gameSpace.width,gameSpace.height);
+    pen.stroke();
+    //end
+    socket.emit('pdata',{x:x,y:y,d:d,rc:recoil,hp:hp});
+
+    //server shits
+}
+function control(){
+    xV+=(input.RIGHT-input.LEFT)*2;
+    yV+=(input.UP-input.DOWN)*-2;
+    x+=xV;
+    y+=yV;
+    xV*=0.8;
+    yV*=0.8;
+    d=Math.atan2(mX(x)-mouse.x,-mY(y)+mouse.y);
+    camx+=(x-camx)/10;
+    camy+=(y-camy)/10;
+    dashCd--;
+    if(input.DASH&&dashCd<0){
+        xV+=Math.sin(d)*-30;
+        yV-=Math.cos(d)*-30;
+        dashCd=20;
+    }
+    if(input.FIRE&&recoil<1){
+        var timer=0;
+        var ig=setInterval(()=>{timer++;if(timer>3){clearInterval(ig)}else{recoil+=6.5}},10);
+        socket.emit('fire',{x:x,y:y,d:d});
+    }
+    recoil*=0.8;
+}
+function hbar(x,y,p){
+    pen.beginPath();
+    pen.roundRect(mX(x-30),mY(y+35),60*camz,1,2);
+    pen.lineWidth=8*camz;
+    pen.strokeStyle="black"
+    pen.stroke();
+    pen.lineWidth=6*camz;
+    pen.strokeStyle="red"
+    pen.stroke();
+    pen.beginPath();
+    pen.roundRect(mX(x-30),mY(y+35),60*p*camz,1,2);
+    pen.lineWidth=6*camz;
+    pen.strokeStyle=`rgb(0, 255, 38)`;
+    pen.stroke();
+
+}
+function grid(s){
+  var size=s*camz;
+  var relx=-camx*camz%size+gameSpace.width/2;
+  var rely=-camy*camz%size+gameSpace.height/2;
+  pen.beginPath();
+  pen.rect(0,0,gameSpace.width,gameSpace.height);
+  pen.fillStyle=`rgb(235, 235, 235)`;
+  pen.fill();  
+  
+  pen.strokeStyle=`rgb(200,200,200)`;
+  pen.lineWidth=5*camz;
+
+  for (var i = -1 - Math.round(gameSpace.width/ size/2); i < 2 + Math.round(gameSpace.width/ size/2); i++) {
+    pen.moveTo(relx + i * size, rely + (gameSpace.height/2 + size*camz));
+    pen.lineTo(relx + i * size, rely - (gameSpace.height/2 + size*camz));
+    pen.moveTo(relx + (gameSpace.width/2 + size*camz), rely + i * size);
+    pen.lineTo(relx - (gameSpace.width/2 + size*camz), rely + i * size);
+  }
+  pen.stroke();
+}
+function mX(x){
+    return (x-camx)*camz+gameSpace.width/2;
+}
+function mY(y){
+    return (y-camy)*camz+gameSpace.height/2;
+}
+document.addEventListener("mousedown", (event) => {if(event.button==0){input.FIRE=true}});
+document.addEventListener("mouseup", (event) => {if(event.button==0){input.FIRE=false}});
+document.addEventListener("wheel", (event) => {camz-=event.deltaY*0.001});
+document.addEventListener("mousemove", (event) => {
+    mouse.x=event.clientX-gameSpace.getBoundingClientRect().left;
+    mouse.y=event.clientY-gameSpace.getBoundingClientRect().top;
+});
+document.addEventListener('keydown', function(event) {
+    if(event.keyCode == 87) {
+        input.UP=true;
+    }
+    else if(event.keyCode == 83) {
+        input.DOWN=true;
+    }
+    else if(event.keyCode == 68) {
+        input.RIGHT=true;
+    }
+    else if(event.keyCode == 65) {
+        input.LEFT=true;
+    }
+    else if(event.keyCode == 32) {
+        input.DASH=true;
+    }
+    /*else if(event.keyCode == 13) {
+        chatbox=!chatbox;
+        if(chatbox){
+            document.getElementById("chat").style.display="block";
+        } else{
+            document.getElementById("chat").style.display="none";
+
+        }
+    }*/
+});
+document.addEventListener('keyup', function(event) {
+    if(event.keyCode == 87) {
+        input.UP=false;
+    }
+    else if(event.keyCode == 83) {
+        input.DOWN=false;
+    }
+    else if(event.keyCode == 68) {
+        input.RIGHT=false;
+    }
+    else if(event.keyCode == 65) {
+        input.LEFT=false;
+    }
+    else if(event.keyCode == 32) {
+        input.DASH=false;
+    }
+});
+</script>
+</body>
+<style>
+nav ul{height:100px; width: 450px;}
+nav ul{overflow:hidden; overflow-y:scroll;}
+</style>
+<div>
+    <nav>
+        <ul id="chat history" style="list-style-type:none;">
+
+        </ul>
+    </nav>
+</div>
+<form id="chat" action="">
+    <input id="input" autocomplete="off"/>
+</form>
+<script>
+    //load stuff that needs to be late
+    var chatBox = document.getElementById("chat");
+    chatBox.addEventListener('submit', sendMsg);
+    function sendMsg(m){
+      var field=document.getElementById("input");
+      m.preventDefault();
+      socket.emit('chat message', field.value);
+      field.value = '';
+    }
+    function setName(n){
+        socket.emit('setname', n);
+    }
+    socket.on('chat receive', (msg)=>receive(msg[0],msg[1]));
+    function receive(m,p) {
+    var item = document.createElement('li');
+    item.textContent = p+": "+m;
+    document.getElementById("chat history").appendChild(item);
+    document.getElementById("chat history").scrollTo(0, document.getElementById("chat history").scrollHeight);
+  };
+  socket.on('connect', () => {
+    id=socket.id;
+ });
+ socket.on('data', (p)=>{
+    players=p;
+  });
+  socket.on('projectiles', (p)=>{
+    proj=p;
+  });
+  socket.on('hit', (d)=>{
+    hp-=d;
+  });
+</script>
+</html>
